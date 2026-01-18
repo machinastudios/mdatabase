@@ -4,7 +4,7 @@ Simple database API with abstraction layer for Hytale plugins and mods. Supports
 
 ## Overview
 
-MDatabase provides a simple SQL database abstraction layer using JPA/Hibernate that allows Hytale plugins and mods to work with multiple database types seamlessly. All database-related functionality has been moved from `mshared` to `mdatabase` to allow for future MongoDB support as a completely separate implementation.
+MDatabase provides a simple SQL database abstraction layer using JPA/Hibernate that allows Hytale plugins and mods to work with multiple database types seamlessly. 
 
 ## Features
 
@@ -74,7 +74,7 @@ import com.machina.myplugin.database.models.MyModel;
 import com.machina.mdatabase.providers.database.DatabaseDialect;
 import com.machina.mdatabase.providers.database.SQLDatabaseProvider;
 
-public class SQLDatabaseProvider extends com.machina.mdatabase.providers.database.SQLDatabaseProvider {
+public class SQLDatabaseProvider extends SQLDatabaseProvider {
     public SQLDatabaseProvider() {
         super(
             DatabaseDialect.SQLITE,
@@ -186,23 +186,6 @@ public class AddColumnMigration implements Migration {
 
 3. **Entity Classes**: Use descriptive and consistent names
 
-### File Organization
-
-1. **Directory Structure**:
-   ```
-   root/
-   ├── database/
-   │   └── models/
-   │       └── *Model.java
-   ├── providers/
-   │   └── database/
-   │       ├── SQLDatabaseProvider.java
-   │       └── SQLiteBased[Feature].java
-   └── ...
-   ```
-
-2. **Persistence.xml**: Should reference model classes in `database/models/`, not in `providers/sqlite/`
-
 ## Database Support
 
 ### Supported Databases
@@ -214,13 +197,6 @@ public class AddColumnMigration implements Migration {
 ### Future Support
 
 - **MongoDB**: Will be implemented as a completely separate provider (not in mdatabase)
-
-## Migration from mshared
-
-If you're migrating from `mshared` database classes, update your imports:
-
-- `com.machina.shared.database.*` → `com.machina.mdatabase.database.*`
-- `com.machina.shared.providers.database.*` → `com.machina.mdatabase.providers.database.*`
 
 ## License
 
