@@ -43,6 +43,50 @@ public class MigrationRunner {
     }
 
     /**
+     * Check if a migration has already been executed
+     * @param em The EntityManager to use for queries
+     * @param migrationId The migration ID to check
+     * @return True if the migration has been executed, false otherwise
+     */
+    private boolean isMigrationExecuted(@Nonnull EntityManager em, @Nonnull String migrationId) {
+        try {
+            // First check if migrations table exists
+            if (!DatabaseMigrationUtils.tableExists(em, "mDatabaseMigrations")) {
+                // Table doesn't exist yet - no migrations have been run
+                return false;
+            }
+
+            MigrationRecordModel record = em.find(MigrationRecordModel.class, migrationId);
+            return record != null;
+        } catch (Exception e) {
+            // On error, assume migration hasn't been executed
+            return false;
+        }
+    }
+
+    /**
+     * Mark a migration as executed
+     * @param em The EntityManager to use for database operations
+     * @param migration The migration to mark as executed
+     */
+    private void markMigrationExecuted(@Nonnull EntityManager em, @Nonnull Migration migration) {
+        try {
+            // Check if already marked (idempotency)
+            if (isMigrationExecuted(em, migration.getId())) {
+                return;
+            }
+
+            MigrationRecordModel record = new MigrationRecordModel(migration.getId(), migration.getDescription());
+            em.persist(record);
+            em.flush(); // Ensure it's written immediately
+        } catch (Exception e) {
+            // Log but don't fail - tracking is not critical, but this is a warning
+            System.err.println("[Migration] Warning: Failed to record migration execution for " + migration.getId() + ": " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    /**
      * Run all registered migrations that should run
      * Migrations are executed in registration order
      * @param em The EntityManager to use for database operations
@@ -52,9 +96,21 @@ public class MigrationRunner {
             return;
         }
 
+        // Migrations table (mDatabaseMigrations) is automatically created by Hibernate
+        // when MigrationRecordModel is registered with the provider
+
         // Get list of migrations that should run
+        // A migration should run if:
+        // 1. It hasn't been executed before (checked via tracking table), AND
+        // 2. shouldRun() returns true (plugin-specific logic)
         List<Migration> toRun = new ArrayList<>();
         for (Migration migration : migrations) {
+            // Check if already executed
+            if (isMigrationExecuted(em, migration.getId())) {
+                continue;
+            }
+
+            // Check plugin-specific shouldRun logic
             if (migration.shouldRun(em)) {
                 toRun.add(migration);
             }
@@ -76,6 +132,9 @@ public class MigrationRunner {
 
                 // Execute migration
                 migration.execute(em);
+
+                // Mark migration as executed
+                markMigrationExecuted(em, migration);
 
                 // Commit transaction
                 if (transaction.isActive()) {

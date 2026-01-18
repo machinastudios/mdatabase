@@ -71,9 +71,15 @@ public class SQLDatabaseProvider {
     public SQLDatabaseProvider(DatabaseDialect dialect, String databaseName) {
         this.dialect = dialect;
         this.databaseName = databaseName;
+
+        // Always register MigrationRecordModel for tracking executed migrations
+        registerModel(MigrationRecordModel.class);
     }
 
     public void initialize() {
+        // Download and load Jakarta/Hibernate dependencies first
+        DatabaseDialectDownloader.loadJakartaDependencies();
+
         // Download the dialect if it's not already downloaded
         Class<?> dialectClass = DatabaseDialectDownloader.loadDialectDriverClass(dialect);
 

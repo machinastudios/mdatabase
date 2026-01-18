@@ -213,6 +213,39 @@ public class DatabaseDialectDownloader {
     }
 
     /**
+     * Download and load Jakarta Persistence and Hibernate dependencies
+     * Should be called before initializing EntityManagerFactory
+     */
+    public static void loadJakartaDependencies() {
+        // URLs for Jakarta and Hibernate dependencies
+        String[] jakartaDeps = {
+            // Jakarta Persistence API
+            "https://repo1.maven.org/maven2/jakarta/persistence/jakarta.persistence-api/3.1.0/jakarta.persistence-api-3.1.0.jar",
+            // Hibernate Core
+            "https://repo1.maven.org/maven2/org/hibernate/orm/hibernate-core/6.4.4.Final/hibernate-core-6.4.4.Final.jar",
+            // Hibernate Community Dialects
+            "https://repo1.maven.org/maven2/org/hibernate/orm/hibernate-community-dialects/6.4.4.Final/hibernate-community-dialects-6.4.4.Final.jar"
+        };
+
+        for (String depUrl : jakartaDeps) {
+            try {
+                Path depPath = downloadJar(depUrl);
+                String depPathStr = depPath.toAbsolutePath().toString();
+
+                if (!loadedJars.contains(depPathStr)) {
+                    URL depJarUrl = depPath.toUri().toURL();
+                    addJarToClassLoader(depJarUrl);
+                    loadedJars.add(depPathStr);
+                    logger.info("Loaded Jakarta/Hibernate dependency: " + depPath.getFileName());
+                }
+            } catch (Exception e) {
+                logger.warning("Failed to load Jakarta/Hibernate dependency: " + depUrl + " - " + e.getMessage());
+                // Continue loading other dependencies even if one fails
+            }
+        }
+    }
+
+    /**
      * Load the given dialect from the `lib` directory
      * @param dialect The dialect to load
      * @return The class for the loaded dialect

@@ -51,13 +51,21 @@ public class DatabaseMigrationUtils {
 
     /**
      * Check if a column exists in a table (database-agnostic)
-     * Uses DatabaseMetaData for maximum compatibility
+     * For SQLite, uses PRAGMA table_info for better reliability
      * @param em The EntityManager
      * @param tableName The table name
      * @param columnName The column name
      * @return True if column exists, false otherwise
      */
     public static boolean columnExists(@Nonnull EntityManager em, @Nonnull String tableName, @Nonnull String columnName) {
+        DatabaseType dbType = detectDatabaseType(em);
+        
+        // For SQLite, use PRAGMA directly (more reliable than DatabaseMetaData)
+        if (dbType == DatabaseType.SQLITE) {
+            return columnExistsFallback(em, tableName, columnName);
+        }
+        
+        // For other databases, try DatabaseMetaData first
         try {
             Connection connection = em.unwrap(Connection.class);
             DatabaseMetaData metaData = connection.getMetaData();
@@ -74,6 +82,7 @@ public class DatabaseMigrationUtils {
 
     /**
      * Fallback method to check column existence using database-specific queries
+     * This is the primary method for SQLite (more reliable than DatabaseMetaData)
      * @param em The EntityManager
      * @param tableName The table name
      * @param columnName The column name
@@ -108,10 +117,21 @@ public class DatabaseMigrationUtils {
             // For SQLite, check in result rows
             if (dbType == DatabaseType.SQLITE) {
                 for (Object row : result) {
-                    Object[] columns = (Object[]) row;
-                    String colName = (String) columns[1]; // column name is at index 1
-                    if (columnName.equals(colName)) {
-                        return true;
+                    // PRAGMA table_info returns rows as Object[] where:
+                    // [0] = cid (column index)
+                    // [1] = name (column name)
+                    // [2] = type (column type)
+                    // [3] = notnull
+                    // [4] = dflt_value
+                    // [5] = pk
+                    if (row instanceof Object[]) {
+                        Object[] columns = (Object[]) row;
+                        if (columns.length > 1 && columns[1] instanceof String) {
+                            String colName = (String) columns[1];
+                            if (columnName.equalsIgnoreCase(colName)) {
+                                return true;
+                            }
+                        }
                     }
                 }
                 return false;
@@ -169,6 +189,63 @@ public class DatabaseMigrationUtils {
             default:
                 // Default to SQLite syntax (most common)
                 return "ALTER TABLE " + tableName + " ADD COLUMN " + columnName + " " + columnType;
+        }
+    }
+
+    /**
+     * Ensure the migrations tracking table exists
+     * This is called before checking migration status
+     * @param em The EntityManager to use
+     */
+    public static void ensureMigrationsTableExists(@Nonnull EntityManager em) {
+        String tableName = "mDatabaseMigrations";
+        
+        // If table already exists, nothing to do
+        if (tableExists(em, tableName)) {
+            return;
+        }
+
+        DatabaseType dbType = detectDatabaseType(em);
+        String createTableSql;
+
+        switch (dbType) {
+            case SQLITE:
+                createTableSql = "CREATE TABLE IF NOT EXISTS " + tableName + " (" +
+                    "id TEXT PRIMARY KEY, " +
+                    "description TEXT, " +
+                    "executedAt INTEGER" +
+                    ")";
+                break;
+
+            case MYSQL:
+                createTableSql = "CREATE TABLE IF NOT EXISTS " + tableName + " (" +
+                    "id VARCHAR(255) PRIMARY KEY, " +
+                    "description TEXT, " +
+                    "executedAt DATETIME" +
+                    ")";
+                break;
+
+            case POSTGRES:
+                createTableSql = "CREATE TABLE IF NOT EXISTS " + tableName + " (" +
+                    "id VARCHAR(255) PRIMARY KEY, " +
+                    "description TEXT, " +
+                    "\"executedAt\" TIMESTAMP" +
+                    ")";
+                break;
+
+            default:
+                // Default to SQLite syntax
+                createTableSql = "CREATE TABLE IF NOT EXISTS " + tableName + " (" +
+                    "id TEXT PRIMARY KEY, " +
+                    "description TEXT, " +
+                    "executedAt INTEGER" +
+                    ")";
+        }
+
+        try {
+            em.createNativeQuery(createTableSql).executeUpdate();
+        } catch (Exception e) {
+            // Ignore if table already exists or creation fails
         }
     }
 }

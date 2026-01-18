@@ -115,6 +115,9 @@
                                 <excludes>
                                     <!-- SQLite JDBC Driver, downloaded by DatabaseDialectDownloader -->
                                     <exclude>org.sqlite:*</exclude>
+                                    <!-- Jakarta and Hibernate dependencies, downloaded by DatabaseDialectDownloader -->
+                                    <exclude>jakarta.persistence:*</exclude>
+                                    <exclude>org.hibernate.orm:*</exclude>
                                 </excludes>
                             </artifactSet>
 
