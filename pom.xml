@@ -140,7 +140,24 @@
                             <transformers>
                                 <!-- Merge META-INF/services files (required for JPA/Hibernate to work) -->
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                <!-- Merge MANIFEST files -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer"/>
                             </transformers>
+                            
+                            <!-- Relocate Hibernate to avoid conflicts with other plugins -->
+                            <!-- IMPORTANT: Do NOT relocate org.jboss.logging or jakarta.persistence -->
+                            <!-- - JBoss Logging uses dynamic class generation that breaks with relocation -->
+                            <!-- - Jakarta Persistence annotations need to remain accessible to Hibernate -->
+                            <relocations>
+                                <relocation>
+                                    <pattern>org.hibernate</pattern>
+                                    <shadedPattern>com.machina.mdatabase.shaded.org.hibernate</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>net.bytebuddy</pattern>
+                                    <shadedPattern>com.machina.mdatabase.shaded.net.bytebuddy</shadedPattern>
+                                </relocation>
+                            </relocations>
 
                             <artifactSet>
                                 <excludes>
@@ -161,6 +178,34 @@
                                 <!-- Keep all classes from mdatabase (don't minimize our own code) -->
                                 <filter>
                                     <artifact>com.machina:mdatabase</artifact>
+                                    <includes>
+                                        <include>**</include>
+                                    </includes>
+                                </filter>
+                                <!-- Keep all JBoss Logging classes - required for Hibernate's dynamic class generation -->
+                                <filter>
+                                    <artifact>org.jboss.logging:jboss-logging</artifact>
+                                    <includes>
+                                        <include>**</include>
+                                    </includes>
+                                </filter>
+                                <!-- Keep all Hibernate classes -->
+                                <filter>
+                                    <artifact>org.hibernate.orm:*</artifact>
+                                    <includes>
+                                        <include>**</include>
+                                    </includes>
+                                </filter>
+                                <!-- Keep all ByteBuddy classes (required for Hibernate's bytecode enhancement) -->
+                                <filter>
+                                    <artifact>net.bytebuddy:byte-buddy</artifact>
+                                    <includes>
+                                        <include>**</include>
+                                    </includes>
+                                </filter>
+                                <!-- Keep all Jakarta Persistence classes -->
+                                <filter>
+                                    <artifact>jakarta.persistence:*</artifact>
                                     <includes>
                                         <include>**</include>
                                     </includes>
