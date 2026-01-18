@@ -7,12 +7,19 @@ import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.util.List;
+import java.util.logging.Logger;
+
+import com.machina.mdatabase.providers.database.DatabaseDialect;
 
 /**
  * Utility class for database migrations
  * Provides database-agnostic methods for common migration tasks
  */
 public class DatabaseMigrationUtils {
+    /**
+     * The logger
+     */
+    private static final Logger logger = Logger.getLogger(DatabaseMigrationUtils.class.getName());
     /**
      * Database type enum
      */
@@ -25,49 +32,33 @@ public class DatabaseMigrationUtils {
 
     /**
      * Detect database type from connection metadata
-     * @param em The EntityManager
+     * @param provider The SQLDatabaseProvider
      * @return The database type
      */
     @Nonnull
-    public static DatabaseType detectDatabaseType(@Nonnull EntityManager em) {
-        try {
-            Connection connection = em.unwrap(Connection.class);
-            DatabaseMetaData metaData = connection.getMetaData();
-            String databaseProductName = metaData.getDatabaseProductName().toLowerCase();
-
-            if (databaseProductName.contains("sqlite")) {
-                return DatabaseType.SQLITE;
-            } else if (databaseProductName.contains("mysql")) {
-                return DatabaseType.MYSQL;
-            } else if (databaseProductName.contains("postgresql") || databaseProductName.contains("postgres")) {
-                return DatabaseType.POSTGRES;
-            }
-
-            return DatabaseType.UNKNOWN;
-        } catch (Exception e) {
-            return DatabaseType.UNKNOWN;
-        }
+    public static DatabaseDialect detectDatabaseType(@Nonnull SQLDatabaseProvider provider) {
+        return provider.getDialect();
     }
 
     /**
      * Check if a column exists in a table (database-agnostic)
      * For SQLite, uses PRAGMA table_info for better reliability
-     * @param em The EntityManager
+     * @param provider The SQLDatabaseProvider
      * @param tableName The table name
      * @param columnName The column name
      * @return True if column exists, false otherwise
      */
-    public static boolean columnExists(@Nonnull EntityManager em, @Nonnull String tableName, @Nonnull String columnName) {
-        DatabaseType dbType = detectDatabaseType(em);
-        
+    public static boolean columnExists(@Nonnull SQLDatabaseProvider provider, @Nonnull String tableName, @Nonnull String columnName) {
+        DatabaseDialect dbType = detectDatabaseType(provider);
+
         // For SQLite, use PRAGMA directly (more reliable than DatabaseMetaData)
-        if (dbType == DatabaseType.SQLITE) {
-            return columnExistsFallback(em, tableName, columnName);
+        if (dbType == DatabaseDialect.SQLITE) {
+            return columnExistsFallback(provider, tableName, columnName);
         }
-        
+
         // For other databases, try DatabaseMetaData first
         try {
-            Connection connection = em.unwrap(Connection.class);
+            Connection connection = provider.getEntityManager().unwrap(Connection.class);
             DatabaseMetaData metaData = connection.getMetaData();
 
             // Use DatabaseMetaData for database-agnostic column checking
@@ -76,20 +67,20 @@ public class DatabaseMigrationUtils {
             }
         } catch (Exception e) {
             // If metadata check fails, try database-specific queries
-            return columnExistsFallback(em, tableName, columnName);
+            return columnExistsFallback(provider, tableName, columnName);
         }
     }
 
     /**
      * Fallback method to check column existence using database-specific queries
      * This is the primary method for SQLite (more reliable than DatabaseMetaData)
-     * @param em The EntityManager
+     * @param provider The SQLDatabaseProvider
      * @param tableName The table name
      * @param columnName The column name
      * @return True if column exists, false otherwise
      */
-    private static boolean columnExistsFallback(@Nonnull EntityManager em, @Nonnull String tableName, @Nonnull String columnName) {
-        DatabaseType dbType = detectDatabaseType(em);
+    private static boolean columnExistsFallback(@Nonnull SQLDatabaseProvider provider, @Nonnull String tableName, @Nonnull String columnName) {
+        DatabaseDialect dbType = detectDatabaseType(provider);
 
         try {
             String query;
@@ -112,10 +103,10 @@ public class DatabaseMigrationUtils {
                     return false;
             }
 
-            List<?> result = em.createNativeQuery(query).getResultList();
+            List<?> result = provider.getEntityManager().createNativeQuery(query).getResultList();
 
             // For SQLite, check in result rows
-            if (dbType == DatabaseType.SQLITE) {
+            if (dbType == DatabaseDialect.SQLITE) {
                 for (Object row : result) {
                     // PRAGMA table_info returns rows as Object[] where:
                     // [0] = cid (column index)
@@ -147,20 +138,50 @@ public class DatabaseMigrationUtils {
 
     /**
      * Check if a table exists (database-agnostic)
-     * @param em The EntityManager
+     * Uses native queries so they appear in Hibernate logs
+     * @param provider The SQLDatabaseProvider
      * @param tableName The table name
      * @return True if table exists, false otherwise
      */
-    public static boolean tableExists(@Nonnull EntityManager em, @Nonnull String tableName) {
-        try {
-            Connection connection = em.unwrap(Connection.class);
-            DatabaseMetaData metaData = connection.getMetaData();
+    public static boolean tableExists(@Nonnull SQLDatabaseProvider provider, @Nonnull String tableName) {
+        DatabaseDialect dbType = detectDatabaseType(provider);
 
-            // Use DatabaseMetaData for database-agnostic table checking
-            try (ResultSet tables = metaData.getTables(null, null, tableName, null)) {
-                return tables.next();
+        try {
+            String query;
+
+            switch (dbType) {
+                case SQLITE:
+                    // For SQLite, use sqlite_master with exact match
+                    // SQLite table names are case-sensitive in the database but comparisons may vary
+                    // Use LOWER() to ensure case-insensitive comparison
+                    query = "SELECT name FROM sqlite_master WHERE type='table' AND LOWER(name) = LOWER('" + tableName + "')";
+                    break;
+
+                case MYSQL:
+                    query = "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '" + tableName + "'";
+                    break;
+
+                case POSTGRES:
+                    query = "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename = '" + tableName + "'";
+                    break;
+
+                default:
+                    logger.severe("Unknown database type: " + dbType);
+
+                    // Unknown database, assume table doesn't exist
+                    return false;
             }
+
+            // Log the query manually so it appears in logs
+            logger.info("Executing query to check if table exists: " + query);
+            List<?> result = provider.getEntityManager().createNativeQuery(query).getResultList();
+            boolean exists = !result.isEmpty();
+            logger.info("Table '" + tableName + "' exists: " + exists);
+            return exists;
         } catch (Exception e) {
+            logger.severe("Error checking if table " + tableName + " exists:");
+            e.printStackTrace();
+
             // On error, assume table doesn't exist
             return false;
         }
@@ -195,17 +216,17 @@ public class DatabaseMigrationUtils {
     /**
      * Ensure the migrations tracking table exists
      * This is called before checking migration status
-     * @param em The EntityManager to use
+     * @param provider The SQLDatabaseProvider to use
      */
-    public static void ensureMigrationsTableExists(@Nonnull EntityManager em) {
-        String tableName = "mDatabaseMigrations";
+    public static void ensureMigrationsTableExists(@Nonnull SQLDatabaseProvider provider) {
+        String tableName = "mdatabaseMigrations";
         
         // If table already exists, nothing to do
-        if (tableExists(em, tableName)) {
+        if (tableExists(provider, tableName)) {
             return;
         }
 
-        DatabaseType dbType = detectDatabaseType(em);
+        DatabaseDialect dbType = detectDatabaseType(provider);
         String createTableSql;
 
         switch (dbType) {
@@ -243,7 +264,7 @@ public class DatabaseMigrationUtils {
         }
 
         try {
-            em.createNativeQuery(createTableSql).executeUpdate();
+            provider.getEntityManager().createNativeQuery(createTableSql).executeUpdate();
         } catch (Exception e) {
             // Ignore if table already exists or creation fails
         }

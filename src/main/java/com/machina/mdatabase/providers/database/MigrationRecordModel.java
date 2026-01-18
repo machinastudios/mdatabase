@@ -12,7 +12,7 @@ import java.util.Date;
  * Stores which migrations have been run to avoid running them multiple times
  */
 @Entity
-@Table(name = "mDatabaseMigrations")
+@Table(name = "mdatabaseMigrations")
 public class MigrationRecordModel {
     @Id
     @Column(name = "id", length = 255)

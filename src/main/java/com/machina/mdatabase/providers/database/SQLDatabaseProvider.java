@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.logging.Logger;
 
 /**
  * SQL database provider implementation
@@ -34,6 +35,38 @@ public class SQLDatabaseProvider {
     private static final Object SHARED_EM_LOCK = new Object();
 
     /**
+     * The logger
+     */
+    private static final Logger logger = Logger.getLogger(SQLDatabaseProvider.class.getName());
+
+    /**
+     * Whether to enable debug mode
+     */
+    private static boolean debugMode = false;
+
+    static {
+        // Try loading from env
+        String debugModeEnv = System.getenv("MDATABASE_ENABLE_DEBUG_MODE");
+        if (debugModeEnv != null) {
+            debugMode = Boolean.parseBoolean(debugModeEnv);
+        }
+
+        // Try loading from system property
+        String debugModeProp = System.getProperty("mdatabase.enableDebugMode");
+        if (debugModeProp != null) {
+            debugMode = Boolean.parseBoolean(debugModeProp);
+        }
+    }
+
+    /**
+     * Set the debug mode
+     * @param debugMode Whether to enable debug mode
+     */
+    public static void setDebugMode(boolean debugMode) {
+        SQLDatabaseProvider.debugMode = debugMode;
+    }
+
+    /**
      * The database name (e.g., "auth", "griefprevention")
      */
     private final String databaseName;
@@ -42,6 +75,31 @@ public class SQLDatabaseProvider {
      * The database dialect
      */
     private final DatabaseDialect dialect;
+
+    /**
+     * Database connection configuration
+     */
+    private String host = "localhost";
+
+    /**
+     * The database port
+     */
+    private int port = 3306;
+
+    /**
+     * The database username
+     */
+    private String username = "root";
+
+    /**
+     * The database password
+     */
+    private String password = "";
+
+    /**
+     * The database schema
+     */
+    private String databaseSchema = null;
 
     /**
      * Initialize SQLite PRAGMAs (only once, shared across all instances)
@@ -56,7 +114,7 @@ public class SQLDatabaseProvider {
     /**
      * Migration runner for database migrations
      */
-    private final MigrationRunner migrationRunner = new MigrationRunner();
+    private final MigrationRunner migrationRunner = new MigrationRunner(this);
 
     /**
      * The dialect class
@@ -66,21 +124,61 @@ public class SQLDatabaseProvider {
     /**
      * Constructor
      * @param dialect The database dialect
-     * @param databaseName The database name (e.g., "auth", "griefprevention")
+     * @param databaseName The database name (e.g., "auth", "griefprevention") for SQLite, or schema name for MySQL/PostgreSQL
      */
     public SQLDatabaseProvider(DatabaseDialect dialect, String databaseName) {
         this.dialect = dialect;
         this.databaseName = databaseName;
 
+        // Set default ports based on dialect
+        if (dialect == DatabaseDialect.POSTGRES) {
+            // Default PostgreSQL port
+            this.port = 5432;
+        } else if (dialect == DatabaseDialect.MYSQL) {
+            // Default MySQL port
+            this.port = 3306;
+        }
+
         // Always register MigrationRecordModel for tracking executed migrations
         registerModel(MigrationRecordModel.class);
     }
 
-    public void initialize() {
-        // Download and load Jakarta/Hibernate dependencies first
-        DatabaseDialectDownloader.loadJakartaDependencies();
+    /**
+     * Set database connection configuration (for MySQL/PostgreSQL)
+     * @param host The database host
+     * @param port The database port
+     * @param username The database username
+     * @param password The database password
+     * @param databaseSchema The database schema/database name
+     * @return This instance for method chaining
+     */
+    public SQLDatabaseProvider setConnectionConfig(String host, int port, String username, String password, String databaseSchema) {
+        this.host = host;
+        this.port = port;
+        this.username = username;
+        this.password = password;
+        this.databaseSchema = databaseSchema;
+        return this;
+    }
 
-        // Download the dialect if it's not already downloaded
+    /**
+     * Set database connection configuration with default port (for MySQL/PostgreSQL)
+     * @param host The database host
+     * @param username The database username
+     * @param password The database password
+     * @param databaseSchema The database schema/database name
+     * @return This instance for method chaining
+     */
+    public SQLDatabaseProvider setConnectionConfig(String host, String username, String password, String databaseSchema) {
+        this.host = host;
+        this.username = username;
+        this.password = password;
+        this.databaseSchema = databaseSchema;
+        return this;
+    }
+
+    public void initialize() {
+        // Download the dialect driver if it's not already downloaded
         Class<?> dialectClass = DatabaseDialectDownloader.loadDialectDriverClass(dialect);
 
         // If the dialect class is null, throw an exception
@@ -96,13 +194,7 @@ public class SQLDatabaseProvider {
      * Initialize the EntityManagerFactory programmatically (no persistence.xml needed)
      */
     private synchronized void initializeEntityManagerFactory() {
-        // Set the dialect classloader as context classloader for this thread
-        // This is needed because Hibernate uses the context classloader to load the JDBC driver
-        ClassLoader originalCL = Thread.currentThread().getContextClassLoader();
-        Thread.currentThread().setContextClassLoader(DatabaseDialectDownloader.getDialectClassLoader());
-
         if (emf != null && emf.isOpen()) {
-            Thread.currentThread().setContextClassLoader(originalCL);
             return;
         }
 
@@ -123,22 +215,35 @@ public class SQLDatabaseProvider {
 
             case MYSQL:
                 cfg.setProperty("hibernate.dialect", "org.hibernate.dialect.MySQLDialect");
-                // URL, user, password should be set by caller
+                String mysqlSchema = databaseSchema != null ? databaseSchema : databaseName;
+                String mysqlUrl = String.format("jdbc:mysql://%s:%d/%s?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC", 
+                    host, port, mysqlSchema);
+                cfg.setProperty("jakarta.persistence.jdbc.url", mysqlUrl);
+                cfg.setProperty("jakarta.persistence.jdbc.user", username);
+                cfg.setProperty("jakarta.persistence.jdbc.password", password);
                 break;
 
             case POSTGRES:
                 cfg.setProperty("hibernate.dialect", "org.hibernate.dialect.PostgreSQLDialect");
-                // URL, user, password should be set by caller
+                String postgresSchema = databaseSchema != null ? databaseSchema : databaseName;
+                String postgresUrl = String.format("jdbc:postgresql://%s:%d/%s", 
+                    host, port, postgresSchema);
+                cfg.setProperty("jakarta.persistence.jdbc.url", postgresUrl);
+                cfg.setProperty("jakarta.persistence.jdbc.user", username);
+                cfg.setProperty("jakarta.persistence.jdbc.password", password);
                 break;
         }
 
         // Common Hibernate properties
+        // Use 'update' to automatically create/update tables based on entity models
+        // This is safe for production: only adds columns/tables, never removes them
         cfg.setProperty("hibernate.hbm2ddl.auto", "update");
-        cfg.setProperty("hibernate.show_sql", "false");
-        cfg.setProperty("hibernate.format_sql", "false");
+        cfg.setProperty("hibernate.show_sql", this.debugMode ? "true" : "false");
+        cfg.setProperty("hibernate.format_sql", this.debugMode ? "true" : "false");
         cfg.setProperty("hibernate.dialect_resolvers", "");
         cfg.setProperty("hibernate.connection.provider_disables_autocommit", "true");
         cfg.setProperty("hibernate.jdbc.time_zone", "UTC");
+        cfg.setProperty("hibernate.bytecode.provider", "none");
 
         // Connection pool settings for SQLite (single connection)
         if (dialect == DatabaseDialect.SQLITE) {
@@ -152,27 +257,27 @@ public class SQLDatabaseProvider {
             cfg.addAnnotatedClass(modelClass);
         }
 
-        try {
-            // Build the EntityManagerFactory
-            emf = cfg.buildSessionFactory().unwrap(EntityManagerFactory.class);
+        // Build the EntityManagerFactory
+        emf = cfg.buildSessionFactory().unwrap(EntityManagerFactory.class);
 
-            // Register shutdown hook to close factory when JVM exits
-            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                closeFactory();
-            }));
-        } finally {
-            // Restore original classloader
-            Thread.currentThread().setContextClassLoader(originalCL);
-        }
+        // Register shutdown hook to close factory when JVM exits
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            closeFactory();
+        }));
     }
 
     /**
      * Tests the database connection
+     * This method does NOT run migrations - it only tests the connection
+     * Migrations should run after testConnection() succeeds
      * @return True if the connection is successful, false otherwise
      */
     public boolean testConnection() {
         try {
-            getEntityManager().createNativeQuery("SELECT 1").getResultList();
+            // Use getSharedEntityManager() directly to avoid running migrations
+            // Migrations will run on first getEntityManager() call
+            EntityManager em = getSharedEntityManager();
+            em.createNativeQuery("SELECT 1").getResultList();
             return true;
         } catch (Exception e) {
             return false;
@@ -223,10 +328,20 @@ public class SQLDatabaseProvider {
     }
 
     /**
+     * The cached EntityManager
+     */
+    private EntityManager cachedEntityManager;
+
+    /**
      * Get the EntityManager for this provider
      * @return The EntityManager
      */
     public EntityManager getEntityManager() {
+        // Return the cached EntityManager if it's open
+        if (cachedEntityManager != null && cachedEntityManager.isOpen()) {
+            return cachedEntityManager;
+        }
+
         EntityManager em = getSharedEntityManager();
         
         // Initialize PRAGMAs for SQLite if not already initialized
@@ -234,6 +349,10 @@ public class SQLDatabaseProvider {
             initializePragmas(em);
             pragmasInitialized = true;
         }
+
+        // Cache the EntityManager
+        // This needs to go before the `runMigrations` call to avoid race conditions
+        cachedEntityManager = em;
         
         // Run migrations on first access
         runMigrations(em);
@@ -272,10 +391,11 @@ public class SQLDatabaseProvider {
     private void runMigrations(@Nonnull EntityManager em) {
         // Only run migrations once per provider instance
         if (migrationsRun) {
+            logger.info("Migrations already run for this provider instance");
             return;
         }
         
-        migrationRunner.runMigrations(em);
+        migrationRunner.runMigrations();
         migrationsRun = true;
     }
 

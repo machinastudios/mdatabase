@@ -67,6 +67,8 @@ Add `mdatabase` as a dependency in your plugin's `pom.xml`:
 
 Each plugin should extend `SQLDatabaseProvider` and register its models:
 
+#### SQLite Example
+
 ```java
 package com.machina.myplugin.providers.database;
 
@@ -89,6 +91,49 @@ public class SQLDatabaseProvider extends SQLDatabaseProvider {
     }
 }
 ```
+
+#### MySQL/PostgreSQL Example
+
+```java
+package com.machina.myplugin.providers.database;
+
+import com.machina.myplugin.database.models.MyModel;
+import com.machina.mdatabase.providers.database.DatabaseDialect;
+import com.machina.mdatabase.providers.database.SQLDatabaseProvider;
+
+public class SQLDatabaseProvider extends SQLDatabaseProvider {
+    public SQLDatabaseProvider() {
+        // Initialize with dialect and database name
+        super(
+            DatabaseDialect.MYSQL,  // or DatabaseDialect.POSTGRES
+            "mydatabase"
+        );
+
+        // Configure connection for MySQL/PostgreSQL
+        setConnectionConfig(
+            "localhost",     // host
+            3306,            // port (3306 for MySQL, 5432 for PostgreSQL)
+            "root",          // username
+            "password",      // password
+            "mydatabase"     // schema name
+        );
+
+        // Register all models
+        registerModel(MyModel.class);
+
+        // Register migrations (in order)
+        registerMigration(new MyMigration());
+    }
+}
+```
+
+**Configuration Notes:**
+
+- **SQLite**: Only requires dialect and database file path
+- **MySQL/PostgreSQL**: Requires dialect, database name, and connection configuration
+- The `setConnectionConfig()` method must be called before `initialize()` for MySQL/PostgreSQL
+- JDBC drivers are automatically downloaded and loaded at runtime
+- Default ports: MySQL (3306), PostgreSQL (5432)
 
 ### Using Models
 
