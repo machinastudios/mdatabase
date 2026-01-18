@@ -5,13 +5,15 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 import java.net.URLConnection;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.logging.Logger;
+
+import com.machina.shared.factory.ModLogger;
 
 public class DatabaseDialectDownloader {
     /**
@@ -27,7 +29,12 @@ public class DatabaseDialectDownloader {
     /**
      * The logger for the DatabaseDialectDownloader
      */
-    private static Logger logger = Logger.getLogger(DatabaseDialectDownloader.class.getName());
+    private static final ModLogger logger = ModLogger.forMod("mdatabase", "DatabaseDialectDownloader");
+
+    /**
+     * The root path to the lib directory
+     */
+    private static Path libRootPath = Path.of("lib");
 
     /**
      * The static initializer
@@ -78,8 +85,31 @@ public class DatabaseDialectDownloader {
             throw new IllegalArgumentException("Unsupported dialect: " + dialect);
         }
 
+        try {
+            // Create the lib directory if it doesn't exist
+            if (!Files.exists(libRootPath)) {
+                Files.createDirectories(libRootPath);
+            }
+        } catch (AccessDeniedException e) {
+            try {
+                // Fallback to the `mods` directory
+                libRootPath = Path.of("mods/libs");
+
+                // Create the lib directory if it doesn't exist
+                if (!Files.exists(libRootPath)) {
+                    Files.createDirectories(libRootPath);
+                }
+            } catch (IOException e2) {
+                logger.error("Failed to create lib directory (fallback to mods/libs) %s: %t", libRootPath, e2);
+                throw new RuntimeException("Failed to create lib directory (fallback to mods/libs): " + libRootPath, e2);
+            }
+        } catch (IOException e) {
+            logger.error("Failed to create lib directory %s: %t", libRootPath, e);
+            throw new RuntimeException("Failed to create lib directory: " + libRootPath, e);
+        }
+
         // Get the path to the downloaded dialect
-        Path dialectPath = new File("lib/mdatabase/database/dialects/" + dialectInfo.dialect.name().toLowerCase() + ".jar").toPath();
+        Path dialectPath = libRootPath.resolve("mdatabase/database/dialects/" + dialectInfo.dialect.name().toLowerCase() + ".jar");
 
         // Get the parent directory of the dialect path
         Path parentDirectory = dialectPath.getParent();
@@ -89,21 +119,20 @@ public class DatabaseDialectDownloader {
             try {
                 Files.createDirectories(parentDirectory);
             } catch (IOException e) {
-                logger.severe("Failed to create parent directory: " + parentDirectory);
-                logger.severe(e.getMessage());
+                logger.error("Failed to create parent directory %s: %t", parentDirectory, e);
                 throw new RuntimeException("Failed to create parent directory: " + parentDirectory, e);
             }
         }
 
         // If the dialect is already downloaded, return the path
         if (Files.exists(dialectPath)) {
-            logger.info("Dialect " + dialect + " already downloaded");
+            logger.info("Dialect %s already downloaded", dialect);
             return dialectPath;
         }
 
         // Try to download the dialect
         try {
-            logger.info("Downloading dialect " + dialect + " from " + dialectInfo.url);
+            logger.info("Downloading dialect %s from %s", dialect, dialectInfo.url);
 
             URLConnection connection = java.net.URI.create(dialectInfo.url).toURL().openConnection();
 
@@ -111,14 +140,15 @@ public class DatabaseDialectDownloader {
             Files.copy(inputStream, dialectPath, StandardCopyOption.REPLACE_EXISTING);
             inputStream.close();
 
-            logger.info("Dialect " + dialect + " downloaded");
+            logger.info("Dialect %s downloaded", dialect);
 
             return dialectPath;
         } catch (IOException e) {
-            logger.severe("Failed to download dialect: " + dialect);
-            logger.severe(e.getMessage());
-            throw new RuntimeException("Failed to download dialect: " + dialect, e);
+            logger.error("Failed to download dialect %s: %t", dialect, e);
         }
+
+        // If the dialect is not downloaded, throw an exception
+        throw new RuntimeException("Failed to download dialect: " + dialect);
     }
 
     /**
@@ -129,7 +159,7 @@ public class DatabaseDialectDownloader {
     private static Path downloadJar(String jarUrl) {
         // Extract filename from URL
         String filename = jarUrl.substring(jarUrl.lastIndexOf('/') + 1);
-        Path jarPath = new File("lib/mdatabase/database/deps/" + filename).toPath();
+        Path jarPath = libRootPath.resolve("mdatabase/database/deps/" + filename);
 
         // Get the parent directory
         Path parentDirectory = jarPath.getParent();
@@ -145,20 +175,20 @@ public class DatabaseDialectDownloader {
 
         // If already downloaded, return the path
         if (Files.exists(jarPath)) {
-            logger.info("Dependency " + filename + " already downloaded");
+            logger.info("Dependency %s already downloaded", filename);
             return jarPath;
         }
 
         // Download the JAR
         try {
-            logger.info("Downloading dependency " + filename + " from " + jarUrl);
+            logger.info("Downloading dependency %s from %s", filename, jarUrl);
 
             URLConnection connection = java.net.URI.create(jarUrl).toURL().openConnection();
             InputStream inputStream = connection.getInputStream();
             Files.copy(inputStream, jarPath, StandardCopyOption.REPLACE_EXISTING);
             inputStream.close();
 
-            logger.info("Dependency " + filename + " downloaded");
+            logger.info("Dependency %s downloaded", filename);
             return jarPath;
         } catch (IOException e) {
             throw new RuntimeException("Failed to download dependency: " + jarUrl, e);
@@ -198,7 +228,7 @@ public class DatabaseDialectDownloader {
             // Set as thread context classloader so JDBC DriverManager can find drivers
             Thread.currentThread().setContextClassLoader(dialectClassLoader);
 
-            logger.info("Added JAR to dialect classloader: " + jarUrl);
+            logger.info("Added JAR to dialect classloader: %s", jarUrl);
         } catch (Exception e) {
             throw new RuntimeException("Failed to add JAR to classloader: " + jarUrl, e);
         }
@@ -240,7 +270,7 @@ public class DatabaseDialectDownloader {
                     URL depJarUrl = depPath.toUri().toURL();
                     addJarToClassLoader(depJarUrl);
                     loadedJars.add(depPathStr);
-                    logger.info("Loaded dependency: " + depPath.getFileName());
+                    logger.info("Loaded dependency: %s", depPath.getFileName());
                 }
             }
 
@@ -264,10 +294,10 @@ public class DatabaseDialectDownloader {
             // Register the driver with DriverManager if it implements java.sql.Driver
             if (driverInstance instanceof java.sql.Driver) {
                 java.sql.DriverManager.registerDriver((java.sql.Driver) driverInstance);
-                logger.info("Registered JDBC driver: " + dialectClass.getName());
+                logger.info("Registered JDBC driver: %s", dialectClass.getName());
             }
 
-            logger.info("Loaded " + dialect + " dialect driver class: " + dialectClass.getName());
+            logger.info("Loaded %s dialect driver class: %s", dialect, dialectClass.getName());
 
             // Return the class
             return dialectClass;

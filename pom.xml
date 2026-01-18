@@ -21,6 +21,14 @@
     </properties>
 
     <dependencies>
+        <!-- MShared -->
+        <dependency>
+            <groupId>com.machina</groupId>
+            <artifactId>mshared</artifactId>
+            <version>1.0.0-SNAPSHOT</version>
+            <scope>compile</scope>
+        </dependency>
+
         <!-- SQLite JDBC Driver -->
         <dependency>
             <groupId>org.xerial</groupId>
@@ -81,6 +89,15 @@
             <artifactId>junit-jupiter</artifactId>
             <version>${junit.version}</version>
             <scope>test</scope>
+        </dependency>
+
+        <!-- Hytale Server API -->
+        <dependency>
+            <groupId>com.hypixel.hytale</groupId>
+            <artifactId>Server</artifactId>
+            <version>1.0.0</version>
+            <scope>system</scope>
+            <systemPath>${project.basedir}/lib/HytaleServer.jar</systemPath>
         </dependency>
     </dependencies>
 
