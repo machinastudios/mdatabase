@@ -15,8 +15,8 @@ public abstract class Op<T> {
      * @param ops The operations to OR
      * @return The OR operation
      */
-    public static OrOperator or(Map<String, Object>... ops) {
-        return new OrOperator(Arrays.asList(ops));
+    public static OrOperator or(Map<String, Object> ops) {
+        return new OrOperator(ops);
     }
 
     /**

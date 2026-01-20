@@ -12,24 +12,28 @@ import jakarta.persistence.criteria.CriteriaQuery;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 
-public class OrOperator extends Op<List<Map<String, Object>>> {
-    public OrOperator(List<Map<String, Object>> ops) {
+public class OrOperator extends Op<Map<String, Object>> {
+    public OrOperator(Map<String, Object> ops) {
         super(OpType.OR, ops);
     }
 
     public void apply(CriteriaQuery<?> query, CriteriaBuilder cb, Root<?> root, String fieldName, Object value) {
         List<Predicate> predicates = new ArrayList<>();
 
-        for (Map<String, Object> entry : this.value) {
-            // Iterate in pairs of key and value
-            for (Map.Entry<String, Object> pair : entry.entrySet()) {
-                predicates.add(
-                    cb.equal(
-                        root.get(pair.getKey()),
-                        pair.getValue()
-                    )
-                );
+        // Iterate in pairs of key and value
+        for (Map.Entry<String, Object> entry : this.value.entrySet()) {
+            // If the value is null, skip it
+            if (entry.getValue() == null) {
+                continue;
             }
+
+            // Add the predicate to the list
+            predicates.add(
+                cb.equal(
+                    root.get(entry.getKey()),
+                    entry.getValue()
+                )
+            );
         }
 
         // Add the or predicate to the query
