@@ -41,6 +41,14 @@ public class FindOptions {
      * Constructor with where conditions
      * @param where Where conditions
      */
+    public FindOptions(Op<?> where) {
+        this.where = Map.of("$", where);
+    }
+
+    /**
+     * Constructor with where conditions
+     * @param where Where conditions
+     */
     public FindOptions(Map<String, Object> where) {
         this.where = where != null ? where : new HashMap<>();
     }
@@ -51,6 +59,15 @@ public class FindOptions {
      * @return FindOptions instance
      */
     public static FindOptions where(Map<String, Object> where) {
+        return new FindOptions(where);
+    }
+
+    /**
+     * Create FindOptions with where conditions
+     * @param where Where conditions
+     * @return FindOptions instance
+     */
+    public static FindOptions where(Op<?> where) {
         return new FindOptions(where);
     }
 

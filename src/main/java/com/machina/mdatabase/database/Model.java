@@ -90,6 +90,16 @@ public class Model<T> {
      * @param where Where conditions
      * @return The entity, or null if not found
      */
+    public static <T> T findOne(Class<T> modelClass, Op<?> where) {
+        return findOne(modelClass, FindOptions.where(where));
+    }
+
+    /**
+     * Find one entity matching the options (convenience method)
+     * @param modelClass The model class
+     * @param where Where conditions
+     * @return The entity, or null if not found
+     */
     public static <T> T findOne(Class<T> modelClass, Map<String, Object> where) {
         return findOne(modelClass, FindOptions.where(where));
     }
@@ -114,14 +124,29 @@ public class Model<T> {
             // Apply where conditions
             if (options != null && options.where != null && !options.where.isEmpty()) {
                 List<Predicate> predicates = new ArrayList<>();
+
                 for (Map.Entry<String, Object> entry : options.where.entrySet()) {
                     String fieldName = entry.getKey();
                     Object value = entry.getValue();
-                    
-                    // Convert value to appropriate type
-                    Object convertedValue = convertValue(value, getFieldType(modelClass, fieldName));
-                    predicates.add(cb.equal(root.get(fieldName), convertedValue));
+
+                    // If the field name is "$", `value` can only be an operator
+                    if (fieldName.equals("$")) {
+                        if (!(value instanceof Op<?>)) {
+                            throw new RuntimeException("Where condition must be an operator");
+                        }
+                    }
+
+                    // If the value is an operator
+                    if (value instanceof Op) {
+                        // Apply it
+                        ((Op<?>) value).apply(query, cb, root, fieldName, value);
+                    } else {
+                        // Convert value to appropriate type
+                        Object convertedValue = convertValue(value, getFieldType(modelClass, fieldName));
+                        predicates.add(cb.equal(root.get(fieldName), convertedValue));
+                    }
                 }
+
                 query.where(cb.and(predicates.toArray(new Predicate[0])));
             }
 
