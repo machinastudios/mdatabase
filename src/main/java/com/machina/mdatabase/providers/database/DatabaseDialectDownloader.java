@@ -55,7 +55,7 @@ public class DatabaseDialectDownloader {
             DatabaseDialect.MYSQL,
             new DialectInfo(
                 DatabaseDialect.MYSQL,
-                "https://repo1.maven.org/maven2/com/mysql/cj/mysql-connector-j/8.0.33/mysql-connector-j-8.0.33.jar",
+                "https://repo1.maven.org/maven2/com/mysql/mysql-connector-j/8.0.33/mysql-connector-j-8.0.33.jar",
                 "com.mysql.cj.jdbc.Driver",
                 new String[] {}
             )
