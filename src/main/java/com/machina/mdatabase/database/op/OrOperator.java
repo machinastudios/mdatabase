@@ -17,7 +17,7 @@ public class OrOperator extends Op<Map<String, Object>> {
         super(OpType.OR, ops);
     }
 
-    public void apply(CriteriaQuery<?> query, CriteriaBuilder cb, Root<?> root, String fieldName, Object value) {
+    public List<Predicate> apply(CriteriaQuery<?> query, CriteriaBuilder cb, Root<?> root, String fieldName, Object value) {
         List<Predicate> predicates = new ArrayList<>();
 
         // Iterate in pairs of key and value
@@ -37,6 +37,6 @@ public class OrOperator extends Op<Map<String, Object>> {
         }
 
         // Add the or predicate to the query
-        query.where(cb.or(predicates.toArray(new Predicate[0])));
+        return List.of(cb.or(predicates.toArray(new Predicate[0])));
     }
 }

@@ -1,12 +1,13 @@
 package com.machina.mdatabase.database;
 
-import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 
 import com.machina.mdatabase.database.op.OrOperator;
 
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.CriteriaQuery;
+import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 
 public abstract class Op<T> {
@@ -46,5 +47,5 @@ public abstract class Op<T> {
      * @param fieldName The field name
      * @param value The value
      */
-    public abstract void apply(CriteriaQuery<?> query, CriteriaBuilder cb, Root<?> root, String fieldName, Object value);
+    public abstract List<Predicate> apply(CriteriaQuery<?> query, CriteriaBuilder cb, Root<?> root, String fieldName, Object value);
 }

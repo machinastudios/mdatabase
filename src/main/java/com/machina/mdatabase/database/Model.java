@@ -1,5 +1,12 @@
 package com.machina.mdatabase.database;
 
+import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
 import com.machina.mdatabase.providers.database.SQLDatabaseProvider;
 
 import jakarta.persistence.EntityManager;
@@ -7,13 +14,6 @@ import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.CriteriaQuery;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
-
-import java.lang.reflect.Field;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
 
 /**
  * Base model class that provides ORM functionality
@@ -139,7 +139,8 @@ public class Model<T> {
                     // If the value is an operator
                     if (value instanceof Op) {
                         // Apply it
-                        ((Op<?>) value).apply(query, cb, root, fieldName, value);
+                        List<Predicate> opPredicates = ((Op<?>) value).apply(query, cb, root, fieldName, value);
+                        predicates.addAll(opPredicates);
                     } else {
                         // Convert value to appropriate type
                         Object convertedValue = convertValue(value, getFieldType(modelClass, fieldName));

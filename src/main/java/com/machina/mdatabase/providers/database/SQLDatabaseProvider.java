@@ -1,12 +1,5 @@
 package com.machina.mdatabase.providers.database;
 
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.EntityManagerFactory;
-import jakarta.persistence.criteria.Predicate;
-import org.hibernate.cfg.Configuration;
-
-import javax.annotation.Nonnull;
-
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -14,7 +7,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.logging.Logger;
+
+import javax.annotation.Nonnull;
+
+import org.hibernate.cfg.Configuration;
+
+import com.machina.shared.factory.ModLogger;
+
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityManagerFactory;
+import jakarta.persistence.criteria.Predicate;
 
 /**
  * SQL database provider implementation
@@ -37,34 +39,12 @@ public class SQLDatabaseProvider {
     /**
      * The logger
      */
-    private static final Logger logger = Logger.getLogger(SQLDatabaseProvider.class.getName());
+    private static final ModLogger logger = ModLogger.forMod("mdatabase", "SQLDatabaseProvider");
 
     /**
      * Whether to enable debug mode
      */
-    private static boolean debugMode = false;
-
-    static {
-        // Try loading from env
-        String debugModeEnv = System.getenv("MDATABASE_ENABLE_DEBUG_MODE");
-        if (debugModeEnv != null) {
-            debugMode = Boolean.parseBoolean(debugModeEnv);
-        }
-
-        // Try loading from system property
-        String debugModeProp = System.getProperty("mdatabase.enableDebugMode");
-        if (debugModeProp != null) {
-            debugMode = Boolean.parseBoolean(debugModeProp);
-        }
-    }
-
-    /**
-     * Set the debug mode
-     * @param debugMode Whether to enable debug mode
-     */
-    public static void setDebugMode(boolean debugMode) {
-        SQLDatabaseProvider.debugMode = debugMode;
-    }
+    private static final boolean debugMode = logger.canLog(ModLogger.Levels.DEBUG);
 
     /**
      * The database name (e.g., "auth", "griefprevention")
@@ -238,8 +218,8 @@ public class SQLDatabaseProvider {
         // Use 'update' to automatically create/update tables based on entity models
         // This is safe for production: only adds columns/tables, never removes them
         cfg.setProperty("hibernate.hbm2ddl.auto", "update");
-        cfg.setProperty("hibernate.show_sql", this.debugMode ? "true" : "false");
-        cfg.setProperty("hibernate.format_sql", this.debugMode ? "true" : "false");
+        cfg.setProperty("hibernate.show_sql", debugMode ? "true" : "false");
+        cfg.setProperty("hibernate.format_sql", debugMode ? "true" : "false");
         cfg.setProperty("hibernate.dialect_resolvers", "");
         cfg.setProperty("hibernate.connection.provider_disables_autocommit", "true");
         cfg.setProperty("hibernate.jdbc.time_zone", "UTC");
