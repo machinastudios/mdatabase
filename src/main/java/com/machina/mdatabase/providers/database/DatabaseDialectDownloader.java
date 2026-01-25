@@ -1,6 +1,5 @@
 package com.machina.mdatabase.providers.database;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
@@ -35,6 +34,86 @@ public class DatabaseDialectDownloader {
      * The root path to the lib directory
      */
     private static Path libRootPath = Path.of("lib");
+
+    /**
+     * Get the dialect classloader (or system classloader if not initialized)
+     * @return The classloader to use for loading dialect classes
+     */
+    public static ClassLoader getDialectClassLoader() {
+        return dialectClassLoader != null ? dialectClassLoader : ClassLoader.getSystemClassLoader();
+    }
+
+    /**
+     * Load the given dialect from the `lib` directory
+     * @param dialect The dialect to load
+     * @return The class for the loaded dialect
+     */
+    public static Class<?> loadDialectDriverClass(DatabaseDialect dialect) {
+        // Temporarily load the dialect from the classpath
+        try {
+            var dialectInfo = dialectUrls.get(dialect);
+
+            return Class.forName(dialectInfo.driverClassName);
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException("Failed to load dialect: " + dialect, e);
+        }
+
+        // Download the dialect if it's not already downloaded
+        /*Path dialectPath = downloadDialect(dialect);
+
+        // If the dialect path is null, throw an exception
+        if (dialectPath == null) {
+            throw new RuntimeException("Failed to download dialect: " + dialect);
+        }
+
+        // Get the dialect info
+        DialectInfo dialectInfo = dialectUrls.get(dialect);
+
+        try {
+            // Download and load dependencies first
+            for (String depUrl : dialectInfo.dependencyUrls) {
+                Path depPath = downloadJar(depUrl);
+                String depPathStr = depPath.toAbsolutePath().toString();
+
+                if (!loadedJars.contains(depPathStr)) {
+                    URL depJarUrl = depPath.toUri().toURL();
+                    addJarToClassLoader(depJarUrl);
+                    loadedJars.add(depPathStr);
+                    logger.info("Loaded dependency: %s", depPath.getFileName());
+                }
+            }
+
+            // Convert the path to a URL for adding to classloader
+            URL jarUrl = dialectPath.toUri().toURL();
+            String jarPath = dialectPath.toAbsolutePath().toString();
+
+            // Only add the JAR if it hasn't been loaded yet
+            if (!loadedJars.contains(jarPath)) {
+                addJarToClassLoader(jarUrl);
+                loadedJars.add(jarPath);
+            }
+
+            // Load the driver class using our dialect classloader
+            Class<?> dialectClass = Class.forName(dialectInfo.driverClassName, true, getDialectClassLoader());
+
+            // Instantiate the driver to register it with DriverManager
+            // This ensures JDBC can find the driver when creating connections
+            Object driverInstance = dialectClass.getDeclaredConstructor().newInstance();
+
+            // Register the driver with DriverManager if it implements java.sql.Driver
+            if (driverInstance instanceof java.sql.Driver) {
+                java.sql.DriverManager.registerDriver((java.sql.Driver) driverInstance);
+                logger.info("Registered JDBC driver: %s", dialectClass.getName());
+            }
+
+            logger.info("Loaded %s dialect driver class: %s", dialect, dialectClass.getName());
+
+            // Return the class
+            return dialectClass;
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to load dialect driver class for: " + dialect, e);
+        }*/
+    }
 
     /**
      * The static initializer
@@ -72,11 +151,50 @@ public class DatabaseDialectDownloader {
     }
 
     /**
+     * Custom classloader for loading dialect JARs
+     */
+    private static java.net.URLClassLoader dialectClassLoader = null;
+
+    /**
+     * Add a JAR file to our custom classloader and set it as the thread context classloader
+     * @param jarUrl The URL of the JAR file to add
+     */
+    private static void addJarToClassLoader(URL jarUrl) {
+        try {
+            if (dialectClassLoader == null) {
+                // Create a new URLClassLoader with the system classloader as parent
+                dialectClassLoader = new java.net.URLClassLoader(
+                    new URL[] { jarUrl },
+                    ClassLoader.getSystemClassLoader()
+                );
+            } else {
+                // Create a new classloader that includes the previous URLs plus the new one
+                URL[] existingUrls = dialectClassLoader.getURLs();
+                URL[] newUrls = new URL[existingUrls.length + 1];
+                System.arraycopy(existingUrls, 0, newUrls, 0, existingUrls.length);
+                newUrls[existingUrls.length] = jarUrl;
+
+                dialectClassLoader = new java.net.URLClassLoader(
+                    newUrls,
+                    ClassLoader.getSystemClassLoader()
+                );
+            }
+
+            // Set as thread context classloader so JDBC DriverManager can find drivers
+            Thread.currentThread().setContextClassLoader(dialectClassLoader);
+
+            logger.info("Added JAR to dialect classloader: %s", jarUrl);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to add JAR to classloader: " + jarUrl, e);
+        }
+    }
+
+    /**
      * Download the given dialect to the `lib` directory
      * @param dialect The dialect to download
      * @return The path to the downloaded dialect
      */
-    public static Path downloadDialect(DatabaseDialect dialect) {
+    private static Path downloadDialect(DatabaseDialect dialect) {
         // Get the URL of the dialect
         DialectInfo dialectInfo = dialectUrls.get(dialect);
 
@@ -192,117 +310,6 @@ public class DatabaseDialectDownloader {
             return jarPath;
         } catch (IOException e) {
             throw new RuntimeException("Failed to download dependency: " + jarUrl, e);
-        }
-    }
-
-    /**
-     * Custom classloader for loading dialect JARs
-     */
-    private static java.net.URLClassLoader dialectClassLoader = null;
-
-    /**
-     * Add a JAR file to our custom classloader and set it as the thread context classloader
-     * @param jarUrl The URL of the JAR file to add
-     */
-    private static void addJarToClassLoader(URL jarUrl) {
-        try {
-            if (dialectClassLoader == null) {
-                // Create a new URLClassLoader with the system classloader as parent
-                dialectClassLoader = new java.net.URLClassLoader(
-                    new URL[] { jarUrl },
-                    ClassLoader.getSystemClassLoader()
-                );
-            } else {
-                // Create a new classloader that includes the previous URLs plus the new one
-                URL[] existingUrls = dialectClassLoader.getURLs();
-                URL[] newUrls = new URL[existingUrls.length + 1];
-                System.arraycopy(existingUrls, 0, newUrls, 0, existingUrls.length);
-                newUrls[existingUrls.length] = jarUrl;
-
-                dialectClassLoader = new java.net.URLClassLoader(
-                    newUrls,
-                    ClassLoader.getSystemClassLoader()
-                );
-            }
-
-            // Set as thread context classloader so JDBC DriverManager can find drivers
-            Thread.currentThread().setContextClassLoader(dialectClassLoader);
-
-            logger.info("Added JAR to dialect classloader: %s", jarUrl);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to add JAR to classloader: " + jarUrl, e);
-        }
-    }
-
-    /**
-     * Get the dialect classloader (or system classloader if not initialized)
-     * @return The classloader to use for loading dialect classes
-     */
-    public static ClassLoader getDialectClassLoader() {
-        return dialectClassLoader != null ? dialectClassLoader : ClassLoader.getSystemClassLoader();
-    }
-
-
-    /**
-     * Load the given dialect from the `lib` directory
-     * @param dialect The dialect to load
-     * @return The class for the loaded dialect
-     */
-    public static Class<?> loadDialectDriverClass(DatabaseDialect dialect) {
-        // Download the dialect if it's not already downloaded
-        Path dialectPath = downloadDialect(dialect);
-
-        // If the dialect path is null, throw an exception
-        if (dialectPath == null) {
-            throw new RuntimeException("Failed to download dialect: " + dialect);
-        }
-
-        // Get the dialect info
-        DialectInfo dialectInfo = dialectUrls.get(dialect);
-
-        try {
-            // Download and load dependencies first
-            for (String depUrl : dialectInfo.dependencyUrls) {
-                Path depPath = downloadJar(depUrl);
-                String depPathStr = depPath.toAbsolutePath().toString();
-
-                if (!loadedJars.contains(depPathStr)) {
-                    URL depJarUrl = depPath.toUri().toURL();
-                    addJarToClassLoader(depJarUrl);
-                    loadedJars.add(depPathStr);
-                    logger.info("Loaded dependency: %s", depPath.getFileName());
-                }
-            }
-
-            // Convert the path to a URL for adding to classloader
-            URL jarUrl = dialectPath.toUri().toURL();
-            String jarPath = dialectPath.toAbsolutePath().toString();
-
-            // Only add the JAR if it hasn't been loaded yet
-            if (!loadedJars.contains(jarPath)) {
-                addJarToClassLoader(jarUrl);
-                loadedJars.add(jarPath);
-            }
-
-            // Load the driver class using our dialect classloader
-            Class<?> dialectClass = Class.forName(dialectInfo.driverClassName, true, getDialectClassLoader());
-
-            // Instantiate the driver to register it with DriverManager
-            // This ensures JDBC can find the driver when creating connections
-            Object driverInstance = dialectClass.getDeclaredConstructor().newInstance();
-
-            // Register the driver with DriverManager if it implements java.sql.Driver
-            if (driverInstance instanceof java.sql.Driver) {
-                java.sql.DriverManager.registerDriver((java.sql.Driver) driverInstance);
-                logger.info("Registered JDBC driver: %s", dialectClass.getName());
-            }
-
-            logger.info("Loaded %s dialect driver class: %s", dialect, dialectClass.getName());
-
-            // Return the class
-            return dialectClass;
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to load dialect driver class for: " + dialect, e);
         }
     }
 }
