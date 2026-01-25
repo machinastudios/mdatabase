@@ -24,12 +24,6 @@ MDatabase provides a simple SQL database abstraction layer using JPA/Hibernate t
   - Automatic migration execution on database initialization
   - Database-specific utilities for common migration tasks
 
-## Dependencies
-
-- **SQLite JDBC**: SQLite database driver
-- **Hibernate ORM**: JPA implementation for database operations
-- **Jakarta Persistence API**: Standard JPA API
-
 ## Building
 
 ### Build with Maven
