@@ -11,6 +11,7 @@ import java.util.UUID;
 import javax.annotation.Nonnull;
 
 import org.hibernate.cfg.Configuration;
+import org.hibernate.cfg.MappingSettings;
 
 import com.machina.shared.factory.ModLogger;
 
@@ -225,6 +226,11 @@ public class SQLDatabaseProvider {
         cfg.setProperty("hibernate.jdbc.time_zone", "UTC");
         cfg.setProperty("hibernate.bytecode.provider", "none");
 
+        // Disable static metamodel population to avoid ClassFormatError when loading metamodel
+        // classes from plugin JARs (e.g. in Hytale's PluginClassLoader). We use string-based
+        // criteria (root.get(fieldName)) so the static metamodel is not required.
+        cfg.setProperty(MappingSettings.STATIC_METAMODEL_POPULATION, "disabled");
+
         // Connection pool settings for SQLite (single connection)
         if (dialect == DatabaseDialect.SQLITE) {
             cfg.setProperty("hibernate.connection.provider_class", 
@@ -236,6 +242,9 @@ public class SQLDatabaseProvider {
         for (Class<?> modelClass : registeredModels) {
             cfg.addAnnotatedClass(modelClass);
         }
+
+        // Force Configuration properties into the registry builder (some code paths may not merge them)
+        cfg.getStandardServiceRegistryBuilder().applySettings(cfg.getProperties());
 
         // Build the EntityManagerFactory
         emf = cfg.buildSessionFactory().unwrap(EntityManagerFactory.class);
